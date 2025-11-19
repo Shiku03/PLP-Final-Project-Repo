@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="../static/styles.css">
+    <title>Text to Video LMS</title>
+</head>
+
+<body>
+    <div id="landing">
+        <section id="home">
+            <header>
+                <div class="header-main-section">
+                    <div class="nav">
+                        <nav>
+                            <ul class="nav-items">
+                                <li><a href="#home">Home</a></li>
+                                <li><a href="#about">About us</a></li>
+                                <li><a href="#products">Products</a></li>
+                                <li><a href="#contact">Contact Us</a></li>
+                                <div class="nav-buttons">
+                                    <button class="nav-btn" onclick="redirectToPage('../templates/sign-in.html')">Login</button>
+                                    <button class="nav-btn" onclick="redirectToPage('../sign-in.html')">Sign Up</button>
+                                </div>
+                            </ul>
+                        </nav>
+                    </div>
+                </div>
+
+
+            </header>
+            <div class="main-content">
+                <div class="main-text-container">
+                    <div class="main-text-card">
+                        <h1>Welcome to GenEd</h1>
+                        <p>Your teaching and study assistant</p>
+                    </div>
+
+                </div>
+
+                <div class="main-section">
+                    <div class="upload-container">
+                        <h2>Upload your text to generate videos</h2>
+                        <form class="upload-form">
+                            <input type="file" id="textFile" name="textFile" accept=".txt,.doc,.docx,.pdf" />
+                            <button type="submit" class="upload-btn">Upload</button>
+                        </form>
+                    </div>
+
+                    <div class="video-container">
+                        <h2>Generated Videos</h2>
+                        <div class="videos">
+                            <!-- Generated videos will be displayed here -->
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+
+        </section>
+
+    </div>
+    <script src="../static/script.js"></script>
+</body>
+
+</html>
