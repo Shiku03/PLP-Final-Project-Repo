@@ -10,7 +10,9 @@ CREATE TABLE users(
     fullname VARCHAR(100) NOT NULL,
     nemis_number VARCHAR(50),
     tsc_number VARCHAR(50)
-    phine_number VARCHAR(50)
+    phone_number VARCHAR(50)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 
