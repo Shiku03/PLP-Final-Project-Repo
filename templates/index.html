@@ -21,7 +21,7 @@
                                 <li><a href="#products">Products</a></li>
                                 <li><a href="#contact">Contact Us</a></li>
                                 <div class="nav-buttons">
-                                    <button class="nav-btn" onclick="redirectToPage('../templates/sign-in.html')">Login</button>
+                                    <button class="nav-btn" onclick="redirectToPage('../templates/login.html')">Login</button>w
                                     <button class="nav-btn" onclick="redirectToPage('../sign-in.html')">Sign Up</button>
                                 </div>
                             </ul>
@@ -44,8 +44,9 @@
                     <div class="upload-container">
                         <h2>Upload your text to generate videos</h2>
                         <form class="upload-form">
-                            <input type="file" id="textFile" name="textFile" accept=".txt,.doc,.docx,.pdf" />
-                            <button type="submit" class="upload-btn">Upload</button>
+                            <input type="file" id="uploadedFile" name="uploadedFile" accept=".txt,.doc,.docx,.pdf" />
+                            <button type="submit" id="upload-btn">Upload</button>
+                            <p id="status"></p>
                         </form>
                     </div>
 
