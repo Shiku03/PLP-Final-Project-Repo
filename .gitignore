@@ -1,4 +1,5 @@
 #ignore venv folder
 venv/
 __pycache__/
+.env
 
