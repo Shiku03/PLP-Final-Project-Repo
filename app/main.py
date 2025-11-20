@@ -9,6 +9,9 @@ from schemas import UserCreate
 from passlib.context import CryptContext
 import httpx
 from fastapi import Request, UploadFile, File
+import os
+from dotenv import load_dotenv
+from google import genai
 
 #initialize
 app=FastAPI()
@@ -16,8 +19,9 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 Base.metadata.create_all(bind=engine)
 pwd_context=CryptContext(schemes=["bcrypt"], deprecated="auto")
-EXTERNAL_AI_URL=""
-API_KEY=""
+
+load_dotenv()
+GEMINI_API_KEY=os.getenv("GenEd_Gemini_API_KEY")
 
 #dependency to get the DB session
 def get_db():
@@ -92,24 +96,31 @@ def dashboard(request: Request):
 #upload files endpoint and logic
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    content = await file.read()
-    #read incoming file
-    file_bytes= await file.read
+    content_bytes = await file.read()
 
-    #forward to external AI
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(
-            EXTERNAL_AI_URL, headers={
-                "Authorization": f"Bearer {API_KEY}",
-                },
-                files={"file": (file.filename, file_bytes, file.content_type)},
-        )
-        return {
-            "status_code": "forwarded",
-            "external_ai_response": response.json(),
-        }
-    if response.status_code !=200:
-        raise HTTPException(status_code=500, detail="Error processing file with external AI service")
-    return response.json()
+
+    #forward to Gemini for text extraction
+    client=genai.Client(api_key=GEMINI_API_KEY)
+
+    uploaded_file=client.files.upload(file=content_bytes, file_name=file.filename)
+
+    prompt="Extract all the text from the uploaded file and return it as a single block of text,adding paragraphs where necessary"
+
+    response=client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[uploaded_file,prompt]
+    )
+
+    extracted_text=response.text
+
+    return{
+        "filename": file.filename,
+        "extracted_text": extracted_text
+    }
+
+
+
+
+
 
 
