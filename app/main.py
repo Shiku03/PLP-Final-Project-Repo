@@ -1,38 +1,36 @@
-from fastapi import FastAPI,Form,Depends,HTTPException
+from fastapi import FastAPI, Form, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from database import SessionLocal,engine,Base
+from database import SessionLocal, engine, Base
 from models import User
-from schemas import UserCreate
 from passlib.context import CryptContext
-import httpx
-from fastapi import Request, UploadFile, File
 import os
 from dotenv import load_dotenv
 from google import genai
+import time
 
-#initialize
-app=FastAPI()
+# initialize
+app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 Base.metadata.create_all(bind=engine)
-pwd_context=CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 load_dotenv()
-GEMINI_API_KEY=os.getenv("GenEd_Gemini_API_KEY")
+GEMINI_API_KEY = os.getenv("GenEd_Gemini_API_KEY")
 
-#dependency to get the DB session
+# dependency to get the DB session
 def get_db():
-    db=SessionLocal()
+    db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-#hash password
-def hash_password(password:str):
+# hash password
+def hash_password(password: str):
     return pwd_context.hash(password)
 
 # Password verification
@@ -40,30 +38,29 @@ def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
 
-#Routes
-#home page
+# Routes
+# home page
 @app.get("/")
-def index(request:Request):
-    return templates.TemplateResponse("index.html", {"request":request})
+def index(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
-#dashboard
+# dashboard page
 @app.get("/dashboard")
-def dashboard_page(request:Request):
-    return templates.TemplateResponse("dashboard.html",{"request": request})
+def dashboard(request: Request):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
 
-#Signup endpoint
+# Signup endpoint
 @app.post("/signup")
-def signup(fullname:str=Form(...),username:str=Form(...),email:str=Form(...),password:str=Form(...),db:Session=Depends(get_db)):
-    #check if username or email already exists
-    if db.query(User).filter(User.username==username).first():
-        raise HTTPException(status_code=400, details="Username already exists")
-    user= User(username=username, email=email, password=hash_password(password))
+def signup(fullname: str = Form(...), username: str = Form(...), email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+    # check if username or email already exists
+    if db.query(User).filter(User.username == username).first():
+        raise HTTPException(status_code=400, detail="Username already exists")
+    user = User(username=username, email=email, password=hash_password(password))
     db.add(user)
     db.commit()
     db.refresh(user)
-    return{"message":"User created successfully", "user Id": user.id}
+    return {"message": "User created successfully", "user Id": user.id}
 
-#login route
 # Login route
 @app.post("/login")
 def login(user: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
@@ -71,10 +68,10 @@ def login(user: str = Form(...), password: str = Form(...), db: Session = Depend
         db_user = db.query(User).filter(User.email == user).first()
     else:
         db_user = db.query(User).filter(User.username == user).first()
-    
+
     if not db_user or not verify_password(password, db_user.password):
         raise HTTPException(status_code=400, detail="Invalid credentials")
-    
+
     return RedirectResponse(url="/dashboard", status_code=303)
 
 # Serve signup/login pages
@@ -83,40 +80,90 @@ def signup_page(request: Request):
     return templates.TemplateResponse("sign-in.html", {"request": request})
 
 @app.get("/login")
-def signup_page(request: Request):
+def login_page(request: Request):
     return templates.TemplateResponse("sign-in.html", {"request": request})
 
 
-# Dashboard page
-@app.get("/dashboard")
-def dashboard(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request})
-
-
-#upload files endpoint and logic
+# upload files endpoint and logic
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     content_bytes = await file.read()
 
+    # forward to Gemini for text extraction
+    client = genai.Client(api_key=GEMINI_API_KEY)
 
-    #forward to Gemini for text extraction
-    client=genai.Client(api_key=GEMINI_API_KEY)
+    uploaded_file = client.files.upload(file=content_bytes, file_name=file.filename)
 
-    uploaded_file=client.files.upload(file=content_bytes, file_name=file.filename)
+    prompt = "Extract all the text from the uploaded file and return it as a single block of text, adding paragraphs where necessary"
 
-    prompt="Extract all the text from the uploaded file and return it as a single block of text,adding paragraphs where necessary"
-
-    response=client.models.generate_content(
+    response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=[uploaded_file,prompt]
+        contents=[uploaded_file, prompt]
     )
 
-    extracted_text=response.text
+    extracted_text = getattr(response, "text", None) or getattr(response, "content", None) or ""
 
-    return{
+    # use extracted text as the prompt for video generation using Veo3
+    VEOS_MODEL = "veo-2.0-generate-001"
+    output_filename = f"{os.path.splitext(file.filename)[0]}_generated_video.mp4"
+    video_prompt = extracted_text
+
+    print("Starting video generation...")
+
+    operation = client.models.generate_video(
+        model=VEOS_MODEL,
+        prompt=video_prompt,
+        output_file_name=output_filename,
+        config={
+            "aspectRatio": "16:9",
+            "durationSeconds": 6
+        }
+    )
+
+    # Poll the operation status until the video is ready
+    # The exact polling/get API may vary by SDK version; adjust if needed.
+    while not getattr(operation, "done", False):
+        print("Waiting for video generation to complete... (Checking status in 10s)")
+        time.sleep(10)  # Wait 10 seconds before checking again
+        # Refresh the operation object status; use operation.name if required by SDK
+        try:
+            operation = client.operations.get(getattr(operation, "name", operation))
+        except Exception:
+            # fallback: try to re-use the operation object or break to avoid infinite loop on SDK mismatch
+            break
+
+    print("\nVideo generation complete!")
+
+    # The generated video object is located in the operation's response
+    generated_video = operation.response.generated_videos[0]
+
+    # Attempt to download the video bytes; SDKs vary, so we handle common fields
+    video_bytes = None
+    if hasattr(generated_video.video, "video_bytes"):
+        video_bytes = generated_video.video.video_bytes
+    elif hasattr(generated_video.video, "content"):
+        video_bytes = generated_video.video.content
+    else:
+        # try SDK download helper
+        try:
+            downloaded = client.files.download(file=generated_video.video)
+            video_bytes = getattr(downloaded, "content", None) or getattr(downloaded, "data", None)
+        except Exception:
+            video_bytes = None
+
+    if video_bytes:
+        with open(output_filename, "wb") as f:
+            f.write(video_bytes)
+        print(f"Video successfully saved to {output_filename}")
+    else:
+        print("Failed to retrieve video bytes from the operation response.")
+
+    return {
         "filename": file.filename,
-        "extracted_text": extracted_text
+        "extracted_text": extracted_text,
+        "generated_video": output_filename if video_bytes else None
     }
+
 
 
 
