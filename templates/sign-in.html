@@ -1,4 +1,42 @@
-<form action="/signup" method="POST" class="sign-up-form">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="../static/styles.css">
+    <title>SignUp Form</title>
+</head>
+<body>
+    <header>
+                <div class="header">
+                    <div class="nav">
+                        <nav>
+                            <div class="header-left">
+                                <p>LOGO</p>
+                            </div>
+                            <div class="header-center">
+                                <h2>AI for a better education</h2>
+
+                                <ul class="nav-items-container">
+                                    <div class="nav-items">
+                                        <li><a href="../templates/index.html">Home</a></li>
+                                        <li><a href="#about">About us</a></li>
+                                        <li><a href="#products">Products</a></li>
+                                        <li><a href="#contact">Contact Us</a></li>
+                                    </div>
+
+                                </ul>
+                            </div>
+                           
+                        </nav>
+                    </div>
+                </div>
+
+
+            </header>
+            <div class="form-container">
+ <form action="/signup" method="POST" class="sign-up-form" id="signup-form">
+        <h2>SignUp Form</h2>
     <label for="username">Fullname:</label>
     <input type="text" id="fullname" name="fullname" required><br><br>
 
@@ -11,8 +49,70 @@
     <label for="password">Password:</label>
     <input type="password" id="password" name="password" required><br><br>
 
-    <label for="username">Phone Number:</label>
+    <label for="phone-number">Phone Number:</label>
     <input type="text" id="phone-number" name="phone-number"><br><br>
+
+     <label for="role">Role:</label>
+    <select id="role" name="role">
+        <option value="">Select role</option>
+        <option value="admin">Admin</option>
+        <option value="other">User</option>
+    </select><br><br>
+
+    <p>Already have an account? <a href="../templates/login.html">Login here</a></p>
 
     <button type="submit">Sign Up</button>
 </form>
+            </div>
+   
+ <script>
+ // Attach a submit handler to POST JSON to your API endpoints in main.py.
+ (function(){
+   const form = document.getElementById('signup-form');
+   if (!form) return;
+   form.addEventListener('submit', async (e) => {
+     e.preventDefault();
+     const data = {
+       fullname: form.fullname.value,
+       username: form.username.value,
+       email: form.email.value,
+       password: form.password.value,
+       phone_number: form['phone-number'].value,
+       role: form.role.value
+     };
+
+     const endpoints = ['/api/signup', '/signup'];
+     for (const ep of endpoints) {
+       try {
+         const res = await fetch(ep, {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify(data)
+         });
+         if (res.ok) {
+           // expect JSON { message, redirect } from your API
+           const json = await res.json().catch(() => ({}));
+           alert(json.message || 'Signup successful');
+           if (json.redirect) window.location.href = json.redirect;
+           return;
+         } else if (res.status >= 400 && res.status < 500) {
+           const err = await res.json().catch(() => ({}));
+           alert(err.message || 'Signup failed');
+           return;
+         }
+         // if server error, try next endpoint
+       } catch (err) {
+         // network error, try next endpoint
+       }
+     }
+     // fallback to normal form submit if no endpoint worked
+     form.submit();
+   });
+ })();
+ </script>
+
+ <script src="../static/script.js"></script>
+</body>
+</html>
+
+
