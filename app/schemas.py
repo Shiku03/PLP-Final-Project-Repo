@@ -1,6 +1,7 @@
 from pydantic import BaseModel,EmailStr
 from typing import Optional
 import datetime
+from models import UserRole
 
 #create base user class
 class UserBase(BaseModel):
@@ -8,7 +9,7 @@ class UserBase(BaseModel):
     username:str
     email:EmailStr
     phone_number:Optional[str]=None
-    role: Optional[str] = "user"
+    role: Optional[UserRole] = UserRole.user
 
 #create user creation class that inherits from base class
 class UserCreate(UserBase):
