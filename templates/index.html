@@ -155,11 +155,11 @@
             Object.assign(opts.headers, extraHeaders);
             const res = await fetch(ep, opts);
             if (!res.ok) {
-              // if client error, return failure info (don't just throw and retry)
+              // if client error, return failure info
               if (res.status >= 400 && res.status < 500) {
                 let err = {};
-                try { err = await res.json(); } catch (e) { err = { message: `Request failed: ${res.status}` }; }
-                return { ok: false, status: res.status, error: err };
+                try { err = await res.json(); } catch (e) {}
+                throw new Error(err.message || `Request failed: ${res.status}`);
               }
               // if server error, try next endpoint
               continue;
