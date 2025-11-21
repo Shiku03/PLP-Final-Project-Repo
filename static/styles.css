@@ -96,17 +96,46 @@
         align-items: center;
     }
 
-    .header-main-section {
+    .header {
         width: 100%;
+    }
+    .header-left{
+        width: 10%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+    .header-center{
+display: flex;
+flex-direction: column;
+flex-grow: 1;
+justify-content: space-between;
+align-items: center;
+gap: 10px;
+    }
+    .header-right{
+        width: 10%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
 
     .nav {
-        padding: 20px 10px;
+        padding:10px;
+    }
+    nav{
+        display: flex;
+    }
+    .nav-items-container{
+        width: 100%;
+        display: flex;
+        align-items: center;
     }
 
     .nav-items {
+        flex-grow:1;
         display: flex;
-        justify-content: space-around;
+        justify-content: center;
         align-items: center;
     }
 
@@ -124,6 +153,12 @@
     nav a:hover {
         color: #424242;
     }
+    .header-lvl-1{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
 
     .nav-buttons {
         display: flex;
@@ -172,31 +207,103 @@
     .main-section{
         width: 100%;
         height: 70%;
-        display: flex;
-        justify-content: space-around;
-        align-items: center;
-        gap: 20px;
+       
         padding: 20px;
+    }
+    .upload-section{
+        width: 100%;
+        height:400px;
+        padding: 20px;
+        display: flex;
     }
 
     .upload-container{
-        width:25%;
-        height: 100%;
+        width:30%;
+        height:100%;
         margin: 12px;
         padding: 20px;
         border: 2px solid #ccc;  
         border-radius: 8px;
-    
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
     }
-    .video-container{
+    .upload-container-text{
+        height: 20%;
+    }
+
+    .upload-form-container{
+        width: 100%;
+        flex-grow: 1;
+        background-color: #d1d1d1;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+
+    }
+    .upload-form{
+        padding: 12px;
+    }
+    .upload-form input, .upload-form button{
+        padding:4px;
+    }
+    .text-container{
         width:70%;
         height: 100%;
         margin: 12px;
         padding: 20px;
         border: 2px solid #ccc;  
         border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+
     
     }
+    .text-container-text{
+        width: 100%;
+        height: 20%;
+    }
+       .extracted-text-section{
+         width: 100%;
+         flex-grow: 1;
+    }
+    .extracted-text-box{
+        width: 100%;
+        height: 80%;
+        background-color: #d1d1d1;
+    }
+    .video-section{
+        width: 100%;
+        height:400px;
+        padding: 20px;
+        display: flex;
+        justify-content: center;
+    }
+    .video-container{
+        width:60%;
+        height:100%;
+        margin: 12px;
+        padding: 20px;
+        border: 2px solid #ccc;  
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    .video-container-text{
+        height: 20%;
+    }
+    .video-box{
+        width: 100%;
+        height: 80%;
+        background-color: #d1d1d1;
+    }
+    #generated-video{
+        width: 100%;
+        height: 100%;
+        background-color: #9c9c9c;
+    }
+ 
     .content{
         display: flex;
         justify-content: space-around;
@@ -210,6 +317,67 @@
         background-color: #f4f4f4;
         padding: 20px;
         box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    }
+    .form-container{
+        width: 100%;
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .sign-up-form,.login-form{
+        padding: 20px;
+        margin:20px;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        width: 50%;
+       
+    }
+    .sign-up-form h2,.login-form h2{
+        text-align: center;
+        margin-bottom: 16px;
+        font-size: 24px;
+    }
+
+    .sign-up-form label,.login-form label{
+        display: block;
+        margin-bottom: 8px;
+        font-size: 16px;
+    }
+    .sign-up-form input, .login-form input{
+        width: 100%;
+        padding: 8px;
+        margin-bottom: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+    .sign-up-form select, .login-form select{
+        width: 100%;
+        padding: 8px;
+        margin-bottom: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+
+    .sign-up-form p, .login-form p{
+        font-size: 12px;
+        text-align: center;
+        margin-top: 12px;
+        margin-bottom: 8px;
+    }
+
+    .sign-up-form button, .login-form button{
+        width: 100%;
+        padding: 10px;
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 16px;
+        cursor: pointer;
     }
 
 }
