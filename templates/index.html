@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="../static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css">
     <title>Text to Video LMS</title>
 </head>
 
@@ -23,7 +23,7 @@
 
                                 <ul class="nav-items-container">
                                     <div class="nav-items">
-                                        <li><a href="../templates/index.html">Home</a></li>
+                                        <li><a href="/">Home</a></li>
                                         <li><a href="#about">About us</a></li>
                                         <li><a href="#products">Products</a></li>
                                         <li><a href="#contact">Contact Us</a></li>
@@ -34,8 +34,8 @@
                             <div class="header-right">
                                 <div class="nav-buttons">
                                     <button class="nav-btn"
-                                        onclick="redirectToPage('../templates/login.html')">Login</button>
-                                    <button class="nav-btn" onclick="redirectToPage('../sign-in.html')">Sign Up</button>
+                                        onclick="redirectToPage('/login')">Login</button>
+                                    <button class="nav-btn" onclick="redirectToPage('/signup')">Sign Up</button>
                                 </div>
                             </div>
                         </nav>
@@ -193,7 +193,7 @@
         const formData = new FormData();
         formData.append('file', file);
 
-        const endpoints = ['/api/upload', '/upload'];
+        const endpoints = ['/upload'];
         const res = await tryPostEndpoints(endpoints, formData, false);
         if (!res.ok) {
           setStatus('Upload failed (no endpoint available)', true);
@@ -277,7 +277,7 @@
     })();
     </script>
 
-    <script src="../static/script.js"></script>
+    <script src="/static/script.js"></script>
 </body>
 
 </html>
