@@ -1,9 +1,98 @@
-<form action="/login" method="POST" class="login-form">
-    <label for="user">Username/Email:</label>
-    <input type="text" id="user" name="user" placeholder="Your Username or Email" required><br><br>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="../static/styles.css">
+    <title>Login</title>
+</head>
+<body>
+    <header>
+                <div class="header">
+                    <div class="nav">
+                        <nav>
+                            <div class="header-left">
+                                <p>LOGO</p>
+                            </div>
+                            <div class="header-center">
+                                <h2>AI for a better education</h2>
+
+                                <ul class="nav-items-container">
+                                    <div class="nav-items">
+                                        <li><a href="../templates/index.html">Home</a></li>
+                                        <li><a href="#about">About us</a></li>
+                                        <li><a href="#products">Products</a></li>
+                                        <li><a href="#contact">Contact Us</a></li>
+                                    </div>
+
+                                </ul>
+                            </div>
+                           
+                        </nav>
+                    </div>
+                </div>
+
+
+            </header>
+            <div class="form-container">
+<form action="/login" method="POST" class="login-form" id="login-form">
+    <h2>Login</h2>
+
+    <label for="identifier">Username or Email:</label>
+    <input type="text" id="identifier" name="identifier" required autocomplete="username" /><br><br>
 
     <label for="password">Password:</label>
-    <input type="password" id="password" name="password" required><br><br>
+    <input type="password" id="password" name="password" required autocomplete="current-password" /><br><br>
+
+    <p>Don't have an account? <a href="sign-in.html">Sign up here</a></p>
 
     <button type="submit">Login</button>
 </form>
+            </div>
+   
+ <script>
+ // Attach a submit handler to POST JSON to your API endpoints in main.py.
+ (function(){
+   const form = document.getElementById('login-form');
+   if (!form) return;
+   form.addEventListener('submit', async (e) => {
+     e.preventDefault();
+     const data = {
+       identifier: form.identifier.value,
+       password: form.password.value
+     };
+
+     const endpoints = ['/api/login', '/login'];
+     for (const ep of endpoints) {
+       try {
+         const res = await fetch(ep, {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify(data)
+         });
+         if (res.ok) {
+           const json = await res.json().catch(() => ({}));
+           alert(json.message || 'Login successful');
+           if (json.redirect) window.location.href = json.redirect;
+           return;
+         } else if (res.status >= 400 && res.status < 500) {
+           const err = await res.json().catch(() => ({}));
+           alert(err.message || 'Login failed');
+           return;
+         }
+         // server error -> try next endpoint
+       } catch (err) {
+         // network error -> try next endpoint
+       }
+     }
+     // fallback to normal form submit if no endpoint worked
+     form.submit();
+   });
+ })();
+ </script>
+
+ <script src="../static/script.js"></script>
+</body>
+</html>
+
+
