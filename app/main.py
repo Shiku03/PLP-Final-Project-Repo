@@ -4,12 +4,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from database import SessionLocal, engine, Base
-from models import User
+from models import User, UserRole
 from passlib.context import CryptContext
 import os
 from dotenv import load_dotenv
 from google import genai
 import time
+from typing import Optional
+import schemas
 
 # initialize
 app = FastAPI()
@@ -50,16 +52,49 @@ def dashboard(request: Request):
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
 # Signup endpoint
-@app.post("/signup")
-def signup(fullname: str = Form(...), username: str = Form(...), email: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
-    # check if username or email already exists
+@app.post("/signup", response_model=schemas.UserOut)
+def signup(
+    fullname: str = Form(...),
+    username: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    role: Optional[str] = Form("user"),
+    phone_number: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    # check uniqueness
     if db.query(User).filter(User.username == username).first():
         raise HTTPException(status_code=400, detail="Username already exists")
-    user = User(username=username, email=email, password=hash_password(password))
-    db.add(user)
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=400, detail="Email already exists")
+
+    # validate with pydantic schema (will coerce enum if provided)
+    try:
+        user_in = schemas.UserCreate(
+            fullname=fullname,
+            username=username,
+            email=email,
+            password=password,
+            role=UserRole(role) if role else UserRole.user,
+            phone_number=phone_number,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid input: {e}")
+
+    # create DB user
+    db_user = User(
+        fullname=user_in.fullname,
+        username=user_in.username,
+        email=user_in.email,
+        password=hash_password(user_in.password),
+        role=user_in.role,
+        phone_number=user_in.phone_number,
+    )
+    db.add(db_user)
     db.commit()
-    db.refresh(user)
-    return {"message": "User created successfully", "user Id": user.id}
+    db.refresh(db_user)
+
+    return schemas.UserOut.from_orm(db_user)
 
 # Login route
 @app.post("/login")
@@ -81,7 +116,7 @@ def signup_page(request: Request):
 
 @app.get("/login")
 def login_page(request: Request):
-    return templates.TemplateResponse("sign-in.html", {"request": request})
+    return templates.TemplateResponse("login.html", {"request": request})
 
 
 # upload files endpoint and logic
