@@ -3,9 +3,8 @@ from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from database import SessionLocal, engine, Base
-import models
-from models import User, UserRole, Document, Summary, Video, Download
+from app.database import SessionLocal, engine, Base
+from app.models import User, UserRole, Document, Summary, Video, Download
 from passlib.context import CryptContext
 import os
 import uuid
@@ -13,7 +12,7 @@ from dotenv import load_dotenv
 from google import genai
 import time
 from typing import Optional
-import schemas
+from app import schemas
 import asyncio
 from fastapi import Depends, HTTPException
 from pathlib import Path
