@@ -8,6 +8,7 @@ class UserBase(BaseModel):
     username:str
     email:EmailStr
     phone_number:Optional[str]=None
+    role: Optional[str] = "user"
 
 #create user creation class that inherits from base class
 class UserCreate(UserBase):
@@ -17,7 +18,6 @@ class UserCreate(UserBase):
 #this will be used when returning user data from the API
 class UserOut(UserBase):
     id:int
-    role:str
     created_at:datetime.datetime
     updated_at:datetime.datetime
 
