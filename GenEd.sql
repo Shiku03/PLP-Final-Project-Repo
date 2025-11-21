@@ -22,6 +22,7 @@ CREATE TABLE documents (
     user_id INT NOT NULL,
     doc_name VARCHAR(255) NOT NULL,
     file_path VARCHAR(255) NOT NULL,
+    extracted_text TEXT NULL,
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
