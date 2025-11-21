@@ -12,19 +12,32 @@
     <div id="landing">
         <section id="home">
             <header>
-                <div class="header-main-section">
+                <div class="header">
                     <div class="nav">
                         <nav>
-                            <ul class="nav-items">
-                                <li><a href="#home">Home</a></li>
-                                <li><a href="#about">About us</a></li>
-                                <li><a href="#products">Products</a></li>
-                                <li><a href="#contact">Contact Us</a></li>
+                            <div class="header-left">
+                                <p>LOGO</p>
+                            </div>
+                            <div class="header-center">
+                                <h2>AI for a better education</h2>
+
+                                <ul class="nav-items-container">
+                                    <div class="nav-items">
+                                        <li><a href="../templates/index.html">Home</a></li>
+                                        <li><a href="#about">About us</a></li>
+                                        <li><a href="#products">Products</a></li>
+                                        <li><a href="#contact">Contact Us</a></li>
+                                    </div>
+
+                                </ul>
+                            </div>
+                            <div class="header-right">
                                 <div class="nav-buttons">
-                                    <button class="nav-btn" onclick="redirectToPage('../templates/login.html')">Login</button>w
+                                    <button class="nav-btn"
+                                        onclick="redirectToPage('../templates/login.html')">Login</button>
                                     <button class="nav-btn" onclick="redirectToPage('../sign-in.html')">Sign Up</button>
                                 </div>
-                            </ul>
+                            </div>
                         </nav>
                     </div>
                 </div>
@@ -41,21 +54,58 @@
                 </div>
 
                 <div class="main-section">
-                    <div class="upload-container">
-                        <h2>Upload your text to generate videos</h2>
-                        <form class="upload-form">
-                            <input type="file" id="uploadedFile" name="uploadedFile" accept=".txt,.doc,.docx,.pdf" />
-                            <button type="submit" id="upload-btn">Upload</button>
-                            <p id="status"></p>
-                        </form>
-                    </div>
+                    <div class="upload-section">
+                        <div class="upload-container">
+                            <div class="upload-container-text">
+                                <h2>Upload your text to generate videos</h2>
+                            </div>
 
-                    <div class="video-container">
-                        <h2>Generated Videos</h2>
-                        <div class="videos">
-                            <!-- Generated videos will be displayed here -->
+                            <div class="upload-form-container">
+                                <form class="upload-form" id="upload-form">
+                                    <input type="file" id="uploadedFile" name="uploadedFile"
+                                        accept=".txt,.doc,.docx,.pdf,.jpg,.png,.jpeg" />
+                                    <button type="submit" id="upload-btn">Upload</button>
+                                    <p id="status"></p>
+                                </form>
+                            </div>
+
+                        </div>
+
+                        <div class="text-container">
+                            <div class="text-container-text">
+                                <h2>Extracted Text</h2>
+                            </div>
+
+                            <div class="extracted-text-section">
+                                <div class="extracted-text-box">
+                                    <!-- extracted text will appear here -->
+                                    <textarea id="extracted-text" rows="10" readonly style="width:100%;"></textarea>
+                                </div>
+                                <div class="extracted-action-section">
+                                    <button class="extracted-text-action-btn" id="generate-btn" disabled>Generate Video</button>
+                                    <button class="extracted-text-action-btn" id="download-btn" disabled>Download Video</button>
+                                </div>
+
+                            </div>
                         </div>
                     </div>
+
+                    <div class="video-section">
+                        <div class="video-container">
+                            <div class="video-container-text">
+                                <h2>Generated Video</h2>
+                            </div>
+
+                            <div class="video-box">
+                                <video id="generated-video" controls>
+                                    <!--video source will be called by an API-->
+                                    <source id="generated-video-src" src="" type="video/mp4">
+                                    Your browser does not support HTML video.
+                                </video>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
 
             </div>
@@ -64,6 +114,169 @@
         </section>
 
     </div>
+
+    <script>
+    (function () {
+      const uploadForm = document.getElementById('upload-form');
+      const fileInput = document.getElementById('uploadedFile');
+      const statusEl = document.getElementById('status');
+      const extractedTextEl = document.getElementById('extracted-text');
+      const generateBtn = document.getElementById('generate-btn');
+      const downloadBtn = document.getElementById('download-btn');
+      const videoEl = document.getElementById('generated-video');
+      const videoSrcEl = document.getElementById('generated-video-src');
+
+      let uploadedFileId = null;
+      let generatedVideoId = null;
+      let generatedVideoUrl = null;
+      let extractedText = '';
+
+      function setStatus(msg, isError = false) {
+        statusEl.textContent = msg || '';
+        statusEl.style.color = isError ? 'red' : 'black';
+      }
+
+      // attempt endpoints in order
+      async function tryPostEndpoints(endpoints, body, isJson = true, extraHeaders = {}) {
+        for (const ep of endpoints) {
+          try {
+            const opts = {
+              method: 'POST',
+              headers: {}
+            };
+            if (isJson) {
+              opts.headers['Content-Type'] = 'application/json';
+              opts.body = JSON.stringify(body);
+            } else {
+              // body is FormData
+              opts.body = body;
+              // do not set content-type for FormData
+            }
+            Object.assign(opts.headers, extraHeaders);
+            const res = await fetch(ep, opts);
+            if (!res.ok) {
+              // if client error, return failure info (don't just throw and retry)
+              if (res.status >= 400 && res.status < 500) {
+                let err = {};
+                try { err = await res.json(); } catch (e) { err = { message: `Request failed: ${res.status}` }; }
+                return { ok: false, status: res.status, error: err };
+              }
+              // if server error, try next endpoint
+              continue;
+            }
+            // success
+            const contentType = res.headers.get('content-type') || '';
+            if (contentType.includes('application/json')) {
+              return { ok: true, json: await res.json() };
+            } else {
+              const text = await res.text();
+              return { ok: true, text };
+            }
+          } catch (err) {
+            // network error -> try next endpoint
+            continue;
+          }
+        }
+        return { ok: false };
+      }
+
+      // Upload handler
+      uploadForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        setStatus('');
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          setStatus('Please choose a file to upload', true);
+          return;
+        }
+        setStatus('Uploading...');
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const endpoints = ['/api/upload', '/upload'];
+        const res = await tryPostEndpoints(endpoints, formData, false);
+        if (!res.ok) {
+          setStatus('Upload failed (no endpoint available)', true);
+          return;
+        }
+        // expect JSON { file_id, text, message } or similar
+        const json = res.json || {};
+        uploadedFileId = json.file_id || json.id || null;
+        extractedText = json.text || '';
+        if (extractedText) {
+          extractedTextEl.value = extractedText;
+        }
+        setStatus(json.message || 'Upload successful');
+        generateBtn.disabled = false;
+      });
+
+      // Generate handler
+      generateBtn.addEventListener('click', async () => {
+        setStatus('');
+        generateBtn.disabled = true;
+        setStatus('Generating video...');
+        const payload = {};
+        if (uploadedFileId) payload.file_id = uploadedFileId;
+        if (!uploadedFileId && extractedTextEl.value) payload.text = extractedTextEl.value;
+
+        const endpoints = ['/api/generate', '/generate'];
+        const res = await tryPostEndpoints(endpoints, payload, true);
+        if (!res.ok) {
+          setStatus('Generation failed (no endpoint available)', true);
+          generateBtn.disabled = false;
+          return;
+        }
+        const json = res.json || {};
+        generatedVideoId = json.video_id || json.id || null;
+        generatedVideoUrl = json.video_url || json.url || null;
+
+        if (generatedVideoUrl) {
+          videoSrcEl.src = generatedVideoUrl;
+          videoEl.load();
+          setStatus(json.message || 'Video generated');
+          downloadBtn.disabled = false;
+        } else if (generatedVideoId) {
+          // Try to construct a download/play URL that the server may expose
+          const possibleUrls = [
+            `/api/video/${generatedVideoId}`,
+            `/videos/${generatedVideoId}.mp4`,
+            `/api/download?video_id=${encodeURIComponent(generatedVideoId)}`,
+            `/download?video_id=${encodeURIComponent(generatedVideoId)}`
+          ];
+          videoSrcEl.src = possibleUrls[0];
+          videoEl.load();
+          setStatus(json.message || 'Video generated (id received)');
+          downloadBtn.disabled = false;
+        } else {
+          setStatus('Generation succeeded but no video info returned', true);
+        }
+        generateBtn.disabled = false;
+      });
+
+      // Download handler
+      downloadBtn.addEventListener('click', () => {
+        if (generatedVideoUrl) {
+          // direct link
+          window.open(generatedVideoUrl, '_blank');
+          return;
+        }
+        if (generatedVideoId) {
+          // try API download endpoints
+          const downloadEndpoints = [
+            `/api/download?video_id=${encodeURIComponent(generatedVideoId)}`,
+            `/download?video_id=${encodeURIComponent(generatedVideoId)}`,
+            `/api/video/${encodeURIComponent(generatedVideoId)}`
+          ];
+          // open first endpoint (server should return attachment)
+          window.location.href = downloadEndpoints[0];
+          return;
+        }
+        setStatus('No generated video to download', true);
+      });
+
+    })();
+    </script>
+
     <script src="../static/script.js"></script>
 </body>
 
