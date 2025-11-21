@@ -1,17 +1,22 @@
 from fastapi import FastAPI, Form, Depends, HTTPException, Request, UploadFile, File
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from database import SessionLocal, engine, Base
-from models import User, UserRole
+import models
+from models import User, UserRole, Document, Summary, Video, Download
 from passlib.context import CryptContext
 import os
+import uuid
 from dotenv import load_dotenv
 from google import genai
 import time
 from typing import Optional
 import schemas
+import asyncio
+from fastapi import Depends, HTTPException
+from pathlib import Path
 
 # initialize
 app = FastAPI()
@@ -120,84 +125,319 @@ def login_page(request: Request):
 
 
 # upload files endpoint and logic
-@app.post("/upload")
-async def upload_file(file: UploadFile = File(...)):
+@app.post("/upload", response_model=schemas.VideoOut)
+async def upload_file(
+    file: UploadFile = File(...),
+    user_id: int = Form(...),                    # or use current_user via auth dependency
+    db: Session = Depends(get_db),
+):
+    # validate user exists
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # ensure storage directory
+    media_dir = Path("media/videos")
+    media_dir.mkdir(parents=True, exist_ok=True)
+
+    # read uploaded file safely (streaming recommended for large files)
     content_bytes = await file.read()
 
-    # forward to Gemini for text extraction
+    # save original uploaded file (optional) — sanitize and uniquify filename
+    orig_dir = Path("media/uploads")
+    orig_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = f"{uuid.uuid4().hex}_{os.path.basename(file.filename)}"
+    orig_path = orig_dir / safe_name
+    with open(orig_path, "wb") as f:
+        f.write(content_bytes)
+
+    # upload to Gemini (example, adjust to SDK requirements)
     client = genai.Client(api_key=GEMINI_API_KEY)
+    try:
+        # pass a file-like object if SDK requires it
+        uploaded = client.files.upload(file=content_bytes, file_name=file.filename)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload file to GenAI: {e}")
 
-    uploaded_file = client.files.upload(file=content_bytes, file_name=file.filename)
+    # get extracted text from model (adjust call to match your SDK)
+    try:
+        # prefer sending a prompt that asks for text extraction
+        extract_prompt = "Extract all text from the uploaded file and return a single block of text."
+        resp = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[extract_prompt],
+            files=[uploaded] if hasattr(uploaded, "id") else None
+        )
+        extracted_text = getattr(resp, "text", None) or getattr(resp, "content", None) or ""
+    except Exception as e:
+        extracted_text = ""
+        # proceed but warn in logs; or raise depending on requirements
 
-    prompt = "Extract all the text from the uploaded file and return it as a single block of text, adding paragraphs where necessary"
+    if not extracted_text:
+        raise HTTPException(status_code=500, detail="Failed to extract text from file")
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=[uploaded_file, prompt]
+    # create Document row (persist extracted_text)
+    doc = Document(
+        user_id=user_id,
+        doc_name=file.filename,
+        file_path=str(orig_path),
+        extracted_text=extracted_text,
     )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
 
-    extracted_text = getattr(response, "text", None) or getattr(response, "content", None) or ""
+    # create Summary (call model to summarize extracted_text)
+    try:
+        summary_prompt = "Summarize the following text into a concise paragraph:\n\n" + extracted_text
+        sum_resp = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[summary_prompt]
+        )
+        summary_text = getattr(sum_resp, "text", None) or getattr(sum_resp, "content", None) or extracted_text[:200]
+    except Exception:
+        summary_text = extracted_text[:200]
 
-    # use extracted text as the prompt for video generation using Veo3
-    VEOS_MODEL = "veo-2.0-generate-001"
-    output_filename = f"{os.path.splitext(file.filename)[0]}_generated_video.mp4"
-    video_prompt = extracted_text
-
-    print("Starting video generation...")
-
-    operation = client.models.generate_video(
-        model=VEOS_MODEL,
-        prompt=video_prompt,
-        output_file_name=output_filename,
-        config={
-            "aspectRatio": "16:9",
-            "durationSeconds": 6
-        }
+    summary = Summary(
+        user_id=user_id,
+        document_id=doc.id,
+        summary_text=summary_text
     )
+    db.add(summary)
+    db.commit()
+    db.refresh(summary)
 
-    # Poll the operation status until the video is ready
-    # The exact polling/get API may vary by SDK version; adjust if needed.
-    while not getattr(operation, "done", False):
-        print("Waiting for video generation to complete... (Checking status in 10s)")
-        time.sleep(10)  # Wait 10 seconds before checking again
-        # Refresh the operation object status; use operation.name if required by SDK
+    # generate video using the summary (use a concise prompt)
+    video_name = f"{Path(file.filename).stem}_generated.mp4"
+    output_path = media_dir / video_name
+
+    try:
+        operation = client.models.generate_video(
+            model="veo-2.0-generate-001",
+            prompt=summary_text,
+            output_file_name=video_name,
+            config={"aspectRatio": "16:9", "durationSeconds": 6}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Video generation request failed: {e}")
+
+    # poll operation asynchronously
+    max_wait = 60 * 5
+    waited = 0
+    interval = 5
+    while not getattr(operation, "done", False) and waited < max_wait:
+        await asyncio.sleep(interval)
+        waited += interval
         try:
             operation = client.operations.get(getattr(operation, "name", operation))
         except Exception:
-            # fallback: try to re-use the operation object or break to avoid infinite loop on SDK mismatch
             break
 
-    print("\nVideo generation complete!")
+    if not getattr(operation, "done", False):
+        raise HTTPException(status_code=500, detail="Video generation did not complete in time")
 
-    # The generated video object is located in the operation's response
-    generated_video = operation.response.generated_videos[0]
+    # extract generated file reference (SDK-specific)
+    gen_vid = None
+    try:
+        gen_vid = operation.response.generated_videos[0]
+    except Exception:
+        raise HTTPException(status_code=500, detail="No generated video returned")
 
-    # Attempt to download the video bytes; SDKs vary, so we handle common fields
+    # try to download the video bytes
     video_bytes = None
-    if hasattr(generated_video.video, "video_bytes"):
-        video_bytes = generated_video.video.video_bytes
-    elif hasattr(generated_video.video, "content"):
-        video_bytes = generated_video.video.content
-    else:
-        # try SDK download helper
-        try:
-            downloaded = client.files.download(file=generated_video.video)
+    try:
+        # if SDK gives a file id
+        if hasattr(gen_vid, "file_id"):
+            downloaded = client.files.download(file=gen_vid.file_id)
             video_bytes = getattr(downloaded, "content", None) or getattr(downloaded, "data", None)
+        # if SDK returns raw bytes on an attribute
+        elif hasattr(gen_vid, "video") and hasattr(gen_vid.video, "content"):
+            video_bytes = gen_vid.video.content
+    except Exception:
+        video_bytes = None
+
+    if not video_bytes:
+        raise HTTPException(status_code=500, detail="Failed to download generated video")
+
+    # save to disk and create Video DB row
+    with open(output_path, "wb") as f:
+        f.write(video_bytes)
+
+    video = Video(
+        user_id=user_id,
+        document_id=doc.id,
+        summary_id=summary.id,
+        video_name=video_name,
+        video_path=str(output_path)
+    )
+    db.add(video)
+    db.commit()
+    db.refresh(video)
+
+    # return VideoOut (uses orm_mode)
+    return schemas.VideoOut.from_orm(video)
+
+# generate video from summary / document / raw text
+@app.post("/generate-video", response_model=schemas.VideoOut)
+async def generate_video(
+    user_id: int = Form(...),
+    summary_id: Optional[int] = Form(None),
+    document_id: Optional[int] = Form(None),
+    raw_text: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+):
+    # validate user
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+
+    # determine text source
+    source_text = ""
+    used_summary_id = summary_id
+
+    if summary_id:
+        summary = db.query(Summary).filter(Summary.id == summary_id).first()
+        if not summary:
+            raise HTTPException(status_code=404, detail="Summary not found")
+        source_text = summary.summary_text
+
+    elif raw_text:
+        source_text = raw_text
+
+    elif document_id:
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+        # read file and ask model to extract text
+        try:
+            with open(doc.file_path, "rb") as fh:
+                file_bytes = fh.read()
+            uploaded = client.files.upload(file=file_bytes, file_name=os.path.basename(doc.file_path))
+            extract_prompt = "Extract all text from the uploaded file and return a single block of text."
+            resp = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[extract_prompt],
+                files=[uploaded] if hasattr(uploaded, "id") else None
+            )
+            source_text = getattr(resp, "text", None) or getattr(resp, "content", None) or ""
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to extract text from document: {e}")
+
+    if not source_text:
+        raise HTTPException(status_code=400, detail="No source text provided for video generation")
+
+    # if there is no pre-existing summary, create a concise summary to base the video on
+    if not summary_id:
+        try:
+            summary_prompt = "Summarize the following text into a concise paragraph:\n\n" + source_text
+            sum_resp = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[summary_prompt]
+            )
+            summary_text = getattr(sum_resp, "text", None) or getattr(sum_resp, "content", None) or source_text[:200]
         except Exception:
-            video_bytes = None
+            summary_text = source_text[:200]
 
-    if video_bytes:
-        with open(output_filename, "wb") as f:
-            f.write(video_bytes)
-        print(f"Video successfully saved to {output_filename}")
+        summary = Summary(user_id=user_id, document_id=document_id if document_id else None, summary_text=summary_text)
+        db.add(summary)
+        db.commit()
+        db.refresh(summary)
+        used_summary_id = summary.id
     else:
-        print("Failed to retrieve video bytes from the operation response.")
+        summary_text = source_text
 
-    return {
-        "filename": file.filename,
-        "extracted_text": extracted_text,
-        "generated_video": output_filename if video_bytes else None
-    }
+    # generate video from the summary_text
+    media_dir = Path("media/videos")
+    media_dir.mkdir(parents=True, exist_ok=True)
+    video_name = f"video_{user_id}_{int(time.time())}.mp4"
+    output_path = media_dir / video_name
+
+    try:
+        operation = client.models.generate_video(
+            model="veo-2.0-generate-001",
+            prompt=summary_text,
+            output_file_name=video_name,
+            config={"aspectRatio": "16:9", "durationSeconds": 6}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Video generation request failed: {e}")
+
+    # poll operation (async)
+    max_wait = 60 * 5
+    waited = 0
+    interval = 5
+    while not getattr(operation, "done", False) and waited < max_wait:
+        await asyncio.sleep(interval)
+        waited += interval
+        try:
+            operation = client.operations.get(getattr(operation, "name", operation))
+        except Exception:
+            break
+
+    if not getattr(operation, "done", False):
+        raise HTTPException(status_code=500, detail="Video generation did not complete in time")
+
+    try:
+        gen_vid = operation.response.generated_videos[0]
+    except Exception:
+        raise HTTPException(status_code=500, detail="No generated video returned by the operation")
+
+    # download video bytes (SDK dependent)
+    video_bytes = None
+    try:
+        if hasattr(gen_vid, "file_id"):
+            downloaded = client.files.download(file=gen_vid.file_id)
+            video_bytes = getattr(downloaded, "content", None) or getattr(downloaded, "data", None)
+        elif hasattr(gen_vid, "video") and hasattr(gen_vid.video, "content"):
+            video_bytes = gen_vid.video.content
+    except Exception:
+        video_bytes = None
+
+    if not video_bytes:
+        raise HTTPException(status_code=500, detail="Failed to download generated video")
+
+    with open(output_path, "wb") as f:
+        f.write(video_bytes)
+
+    video = Video(
+        user_id=user_id,
+        document_id=document_id if document_id else None,
+        summary_id=used_summary_id,
+        video_name=video_name,
+        video_path=str(output_path),
+    )
+    db.add(video)
+    db.commit()
+    db.refresh(video)
+
+    return schemas.VideoOut.from_orm(video)
+
+
+# endpoint to record download and return file
+@app.get("/download-video/{video_id}")
+def download_video(video_id: int, user_id: Optional[int] = None, db: Session = Depends(get_db)):
+    video = db.query(Video).filter(Video.id == video_id).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+
+    # optional user validation
+    if user_id:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+    # create download record if user provided (or skip but best to record if user present)
+    if user_id:
+        download = Download(user_id=user_id, video_id=video_id)
+        db.add(download)
+        db.commit()
+
+    if not Path(video.video_path).exists():
+        raise HTTPException(status_code=404, detail="Video file not found on server")
+
+    return FileResponse(path=video.video_path, media_type="application/octet-stream", filename=video.video_name)
 
 
 
