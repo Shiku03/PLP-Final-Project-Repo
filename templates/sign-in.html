@@ -47,16 +47,17 @@
     <input type="text" id="email" name="email" required><br><br>
 
     <label for="password">Password:</label>
-    <input type="password" id="password" name="password" required><br><br>
+    <input type="password" id="password" name="password" required>
+    <br><br>
 
     <label for="phone-number">Phone Number:</label>
-    <input type="text" id="phone-number" name="phone-number"><br><br>
+    <input type="text" id="phone-number" name="phone_number"><br><br>
 
      <label for="role">Role:</label>
     <select id="role" name="role">
         <option value="">Select role</option>
         <option value="admin">Admin</option>
-        <option value="other">User</option>
+        <option value="user">User</option>
     </select><br><br>
 
     <p>Already have an account? <a href="/login">Login here</a></p>
@@ -69,25 +70,27 @@
  // Attach a submit handler to POST JSON to your API endpoints in main.py.
  (function(){
    const form = document.getElementById('signup-form');
+   
    if (!form) return;
    form.addEventListener('submit', async (e) => {
      e.preventDefault();
+     const formData= new FormData(form);
+      console.log([...formData.entries()]);
      const data = {
        fullname: form.fullname.value,
        username: form.username.value,
        email: form.email.value,
        password: form.password.value,
-       phone_number: form['phone-number'].value,
+       phone_number: form['phone_number'].value,
        role: form.role.value
      };
 
-     const endpoints = ['/api/signup', '/signup'];
+     const endpoints = [ '/signup'];
      for (const ep of endpoints) {
        try {
          const res = await fetch(ep, {
            method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify(data)
+           body: formData
          });
          if (res.ok) {
            // expect JSON { message, redirect } from your API
@@ -97,7 +100,10 @@
            return;
          } else if (res.status >= 400 && res.status < 500) {
            const err = await res.json().catch(() => ({}));
-           alert(err.message || 'Signup failed');
+           alert(err.message || err.detail|| 'Signup failed');
+
+           if (err.redirect) window.location.href = err.redirect;
+
            return;
          }
          // if server error, try next endpoint
@@ -111,7 +117,7 @@
  })();
  </script>
 
- <script src="/static/script.js"></script>
+<!-- <script src="/static/script.js"></script> -->
 </body>
 </html>
 

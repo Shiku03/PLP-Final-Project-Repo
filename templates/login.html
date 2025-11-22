@@ -39,10 +39,11 @@
     <h2>Login</h2>
 
     <label for="identifier">Username or Email:</label>
-    <input type="text" id="identifier" name="identifier" required autocomplete="username" /><br><br>
+    <input type="text" id="identifier" name="user" required autocomplete="username" /><br><br>
 
     <label for="password">Password:</label>
-    <input type="password" id="password" name="password" required autocomplete="current-password" /><br><br>
+    <input type="password" id="password" name="password" required autocomplete="current-password" />
+    <p>Forgot Password? <a href="/change-password">Click Here</a></p><br><br>
 
     <p>Don't have an account? <a href="/signup">Sign up here</a></p>
 
@@ -57,18 +58,18 @@
    if (!form) return;
    form.addEventListener('submit', async (e) => {
      e.preventDefault();
+      const formData= new FormData(form);
      const data = {
-       identifier: form.identifier.value,
+       user: form.user.value,
        password: form.password.value
      };
 
-     const endpoints = ['/api/login', '/login'];
+     const endpoints = ['/login'];
      for (const ep of endpoints) {
        try {
          const res = await fetch(ep, {
            method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify(data)
+           body: formData
          });
          if (res.ok) {
            const json = await res.json().catch(() => ({}));
@@ -77,7 +78,10 @@
            return;
          } else if (res.status >= 400 && res.status < 500) {
            const err = await res.json().catch(() => ({}));
-           alert(err.message || 'Login failed');
+           alert(err.message || err.detail || 'Login failed');
+
+          if (err.redirect) window.location.href = err.redirect;
+
            return;
          }
          // server error -> try next endpoint
