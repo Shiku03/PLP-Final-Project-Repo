@@ -326,7 +326,7 @@ gap: 10px;
         align-items: center;
     }
 
-    .sign-up-form,.login-form{
+    .sign-up-form,.login-form,.change-password-form{
         padding: 20px;
         margin:20px;
         border: 1px solid #ccc;
@@ -334,18 +334,18 @@ gap: 10px;
         width: 50%;
        
     }
-    .sign-up-form h2,.login-form h2{
+    .sign-up-form h2,.login-form h2,.change-password-form h2{
         text-align: center;
         margin-bottom: 16px;
         font-size: 24px;
     }
 
-    .sign-up-form label,.login-form label{
+    .sign-up-form label,.login-form label, .change-password-form label{
         display: block;
         margin-bottom: 8px;
         font-size: 16px;
     }
-    .sign-up-form input, .login-form input{
+    .sign-up-form input, .login-form input, .change-password-form input{
         width: 100%;
         padding: 8px;
         margin-bottom: 8px;
@@ -353,7 +353,7 @@ gap: 10px;
         border-radius: 4px;
         font-size: 14px;
     }
-    .sign-up-form select, .login-form select{
+    .sign-up-form select, .login-form select, .change-password-form select  {
         width: 100%;
         padding: 8px;
         margin-bottom: 8px;
@@ -362,14 +362,14 @@ gap: 10px;
         font-size: 14px;
     }
 
-    .sign-up-form p, .login-form p{
+    .sign-up-form p, .login-form p, .change-password-form p{
         font-size: 12px;
         text-align: center;
         margin-top: 12px;
         margin-bottom: 8px;
     }
 
-    .sign-up-form button, .login-form button{
+    .sign-up-form button, .login-form button, .change-password-form button{
         width: 100%;
         padding: 10px;
         background-color: var(--primary-color);
