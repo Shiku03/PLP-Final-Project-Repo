@@ -192,6 +192,7 @@
         setStatus('Uploading...');
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('user_id', 1);  
 
         const endpoints = ['/upload'];
         const res = await tryPostEndpoints(endpoints, formData, false);
