@@ -16,13 +16,14 @@ from app import schemas
 import asyncio
 from fastapi import Depends, HTTPException
 from pathlib import Path
+from fastapi.responses import JSONResponse
 
 # initialize
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 Base.metadata.create_all(bind=engine)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GenEd_Gemini_API_KEY")
@@ -43,6 +44,9 @@ def hash_password(password: str):
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
+test = hash_password("mypassword")
+print("HASHED:", test)
+print("VERIFY:", verify_password("mypassword", test))
 
 # Routes
 # home page
@@ -56,7 +60,7 @@ def dashboard(request: Request):
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
 # Signup endpoint
-@app.post("/signup", response_model=schemas.UserOut)
+@app.post("/signup")
 def signup(
     fullname: str = Form(...),
     username: str = Form(...),
@@ -68,9 +72,15 @@ def signup(
 ):
     # check uniqueness
     if db.query(User).filter(User.username == username).first():
-        raise HTTPException(status_code=400, detail="Username already exists")
+           return JSONResponse(
+        status_code=400,
+        content={"message": "Username already exists", "redirect": "/login"}
+    )
     if db.query(User).filter(User.email == email).first():
-        raise HTTPException(status_code=400, detail="Email already exists")
+           return JSONResponse(
+        status_code=400,
+        content={"message": "Email already exists", "redirect": "/login"}
+    )
 
     # validate with pydantic schema (will coerce enum if provided)
     try:
@@ -83,7 +93,10 @@ def signup(
             phone_number=phone_number,
         )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid input: {e}")
+           return JSONResponse(
+        status_code=400,
+        content={"message": f"Invalid input: {e}"}
+    )
 
     # create DB user
     db_user = User(
@@ -98,7 +111,13 @@ def signup(
     db.commit()
     db.refresh(db_user)
 
-    return schemas.UserOut.from_orm(db_user)
+    return JSONResponse(
+    status_code=200,
+    content={
+        "message": "Signup successful",
+        "redirect": "/dashboard"
+    }
+)
 
 # Login route
 @app.post("/login")
@@ -107,11 +126,66 @@ def login(user: str = Form(...), password: str = Form(...), db: Session = Depend
         db_user = db.query(User).filter(User.email == user).first()
     else:
         db_user = db.query(User).filter(User.username == user).first()
+    
+    print("DB User:", db_user)
+    
+    if not db_user:
+              print("User not found for identifier:", user)
+              return JSONResponse(
+          status_code=404,
+          content={"message": "User not found. Please sign up first", 
+            "redirect": "/signup"}
+     )
+    
 
-    if not db_user or not verify_password(password, db_user.password):
-        raise HTTPException(status_code=400, detail="Invalid credentials")
 
-    return RedirectResponse(url="/dashboard", status_code=303)
+    if not verify_password(password, db_user.password):
+         print("Password verification failed for user:", user)
+         return JSONResponse(
+        status_code=400,
+        content={"message": "Invalid credentials. Please try again", "redirect": "/login"}
+    )
+    print("User logged in successfully:", user)
+
+    return JSONResponse(
+    status_code=200,
+    content={
+        "message": "Login successful",
+        "redirect": "/dashboard"
+    }
+    )
+
+@app.post("/change-password")
+def change_password(
+    username: str = Form(...),                 # or user_id from session/JWT
+    old_password: str = Form(...),
+    new_password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    # 1. Get the user
+    db_user = db.query(User).filter(User.username == username).first()
+    if not db_user:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "User not found"}
+        )
+
+    # 2. Verify old password
+    if not verify_password(old_password, db_user.password):
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Old password is incorrect"}
+        )
+
+    # 3. Update password
+    db_user.password = hash_password(new_password)
+    db.commit()
+
+    return JSONResponse(
+        status_code=200,
+        content={"message": "Password changed successfully", "redirect": "/login"}
+    )
+  
 
 # Serve signup/login pages
 @app.get("/signup")
@@ -122,6 +196,9 @@ def signup_page(request: Request):
 def login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
+@app.get("/change-password")
+def change_password_page(request: Request):
+    return templates.TemplateResponse("change-password.html", {"request": request})
 
 # upload files endpoint and logic
 @app.post("/upload", response_model=schemas.VideoOut)
@@ -437,8 +514,6 @@ def download_video(video_id: int, user_id: Optional[int] = None, db: Session = D
         raise HTTPException(status_code=404, detail="Video file not found on server")
 
     return FileResponse(path=video.video_path, media_type="application/octet-stream", filename=video.video_name)
-
-
 
 
 
