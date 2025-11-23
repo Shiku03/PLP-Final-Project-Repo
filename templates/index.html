@@ -192,8 +192,7 @@
         setStatus('Uploading...');
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('user_id', 1);  
-
+        
         const endpoints = ['/upload'];
         const res = await tryPostEndpoints(endpoints, formData, false);
         if (!res.ok) {
@@ -202,7 +201,7 @@
         }
         // expect JSON { file_id, text, message } or similar
         const json = res.json || {};
-        uploadedFileId = json.file_id || json.id || null;
+        uploadedFileId = json.document_id || json.id || null;
         extractedText = json.text || '';
         if (extractedText) {
           extractedTextEl.value = extractedText;
