@@ -17,6 +17,7 @@ import asyncio
 from fastapi import Depends, HTTPException
 from pathlib import Path
 from fastapi.responses import JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
 
 # initialize
 app = FastAPI()
@@ -24,6 +25,13 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 Base.metadata.create_all(bind=engine)
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key="your_super_secret_key_here",  # change this
+    same_site="strict",
+    https_only=False,  # set True in production with HTTPS
+)
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GenEd_Gemini_API_KEY")
@@ -121,7 +129,7 @@ def signup(
 
 # Login route
 @app.post("/login")
-def login(user: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
+def login(request:Request, user: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     if "@" in user:
         db_user = db.query(User).filter(User.email == user).first()
     else:
@@ -146,6 +154,8 @@ def login(user: str = Form(...), password: str = Form(...), db: Session = Depend
         content={"message": "Invalid credentials. Please try again", "redirect": "/login"}
     )
     print("User logged in successfully:", user)
+
+    request.session["user_id"] = user.id  # ← save logged-in user ID
 
     return JSONResponse(
     status_code=200,
@@ -203,14 +213,32 @@ def change_password_page(request: Request):
 # upload files endpoint and logic
 @app.post("/upload", response_model=schemas.VideoOut)
 async def upload_file(
-    file: UploadFile = File(...),
-    user_id: int = Form(...),                    # or use current_user via auth dependency
+    request : Request,
+    file: UploadFile = File(...),                   
     db: Session = Depends(get_db),
 ):
+    
+    user_id = request.session.get("user_id")
+
+# validate user logged in
+    if not user_id:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "message": "Please log in first",
+                "redirect": "/login"
+                }
+        )
+    
     # validate user exists
     db_user = db.query(User).filter(User.id == user_id).first()
     if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
+        print("User not found for identifier:", user_id)
+        return JSONResponse(
+          status_code=404,
+          content={"message": "User not found. Please sign up first", 
+            "redirect": "/signup"}
+        )
 
     # ensure storage directory
     media_dir = Path("media/videos")
@@ -231,9 +259,15 @@ async def upload_file(
     client = genai.Client(api_key=GEMINI_API_KEY)
     try:
         # pass a file-like object if SDK requires it
-        uploaded = client.files.upload(file=content_bytes, file_name=file.filename)
+        uploaded = client.files.upload(file=content_bytes)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload file to GenAI: {e}")
+        print("User not found for identifier:", User.id)
+        return JSONResponse(
+          status_code=500,
+          content={
+            "message": "Internal Server Error. Failed to upload file."
+            }
+        )
 
     # get extracted text from model (adjust call to match your SDK)
     try:
