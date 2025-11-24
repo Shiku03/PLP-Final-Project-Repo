@@ -64,7 +64,7 @@
                                 <form class="upload-form" id="upload-form">
                                     <input type="file" id="uploadedFile" name="uploadedFile"
                                         accept=".txt,.doc,.docx,.pdf,.jpg,.png,.jpeg" />
-                                    <button type="submit" id="upload-btn">Upload</button>
+                                    <button type="submit" id="upload-btn">Upload and Extract Text</button>
                                     <p id="status"></p>
                                 </form>
                             </div>
@@ -199,14 +199,20 @@
           setStatus('Upload failed (no endpoint available)', true);
           return;
         }
+        else {
+          setStatus('Upload successful');
+        }
         // expect JSON { file_id, text, message } or similar
         const json = res.json || {};
         uploadedFileId = json.document_id || json.id || null;
         extractedText = json.text || '';
         if (extractedText) {
           extractedTextEl.value = extractedText;
+          setStatus(json.message || 'Text extraction completed');
         }
-        setStatus(json.message || 'Upload successful');
+        else{
+          setStatus(json.message || 'Failed to extract text from the uploaded file. Please try again');
+        }
         generateBtn.disabled = false;
       });
 
