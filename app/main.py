@@ -207,6 +207,12 @@ def change_password_page(request: Request):
 
 # upload files endpoint and logic
 
+@app.post("/upload")
+async def upload_file(
+    uploaded_file: UploadFile = File(...)
+):
+    print(f"File Name: {uploaded_file.filename}")
+    print(f"Content Type: {uploaded_file.content_type}")
 
 
 
