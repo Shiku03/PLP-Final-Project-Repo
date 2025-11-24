@@ -33,6 +33,7 @@ class Document(Base):
     user_id=Column(Integer, ForeignKey("users.id",ondelete="CASCADE"),nullable=False)
     doc_name=Column(String(255), nullable=False)
     file_path=Column(String(255), nullable=False)
+    extracted_text=Column(Text, nullable=True)
     uploaded_at=Column(TIMESTAMP, server_default=func.now())
 
     user=relationship("User", back_populates="documents")
