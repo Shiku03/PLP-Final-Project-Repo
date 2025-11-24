@@ -19,6 +19,7 @@ from pathlib import Path
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from google.genai import types
+from app import crud
 
 # initialize
 app = FastAPI()
@@ -45,18 +46,6 @@ def get_db():
     finally:
         db.close()
 
-# hash password
-def hash_password(password: str):
-    return pwd_context.hash(password)
-
-# Password verification
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-test = hash_password("mypassword")
-print("HASHED:", test)
-print("VERIFY:", verify_password("mypassword", test))
-
 # Routes
 # home page
 @app.get("/")
@@ -79,19 +68,8 @@ def signup(
     phone_number: Optional[str] = Form(None),
     db: Session = Depends(get_db),
 ):
-    # check uniqueness
-    if db.query(User).filter(User.username == username).first():
-           return JSONResponse(
-        status_code=400,
-        content={"message": "Username already exists", "redirect": "/login"}
-    )
-    if db.query(User).filter(User.email == email).first():
-           return JSONResponse(
-        status_code=400,
-        content={"message": "Email already exists", "redirect": "/login"}
-    )
 
-    # validate with pydantic schema (will coerce enum if provided)
+    # validate with pydantic schema
     try:
         user_in = schemas.UserCreate(
             fullname=fullname,
@@ -106,19 +84,33 @@ def signup(
         status_code=400,
         content={"message": f"Invalid input: {e}"}
     )
-
-    # create DB user
-    db_user = User(
-        fullname=user_in.fullname,
-        username=user_in.username,
-        email=user_in.email,
-        password=hash_password(user_in.password),
-        role=user_in.role,
-        phone_number=user_in.phone_number,
-    )
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
+    # check if username or email already exists
+    if crud.get_user_by_username(db, username=user_in.username):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Username already exists. Redirecting to login page",
+                "redirect": "/login"
+            }
+        )   
+    if crud.get_user_by_email(db, email=user_in.email):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Email already exists. Redirecting to login page",
+                "redirect": "/login"
+            }
+        )
+    try:
+        crud.create_user(db, user_in)
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": f"Error creating user: {e}",
+                "redirect": "/signup"
+            }
+        )
 
     return JSONResponse(
     status_code=200,
@@ -132,30 +124,25 @@ def signup(
 @app.post("/login")
 def login(request:Request, user: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     if "@" in user:
-        db_user = db.query(User).filter(User.email == user).first()
+        db_user = crud.get_user_by_username(db, user)
     else:
-        db_user = db.query(User).filter(User.username == user).first()
+        db_user = crud.get_user_by_email(db, user)
     
-    print("DB User:", db_user)
     
     if not db_user:
-              print("User not found for identifier:", user)
-              return JSONResponse(
+            
+        return JSONResponse(
           status_code=404,
           content={"message": "User not found. Please sign up first", 
             "redirect": "/signup"}
      )
     
-
-
-    if not verify_password(password, db_user.password):
-         print("Password verification failed for user:", user)
-         return JSONResponse(
+    if not crud.verify_password(password, db_user.password):
+        return JSONResponse(
         status_code=400,
         content={"message": "Invalid credentials. Please try again", "redirect": "/login"}
     )
-    print("User logged in successfully:", user)
-
+    
     request.session["user_id"] = db_user.id  # ← save logged-in user ID
 
     return JSONResponse(
@@ -168,33 +155,40 @@ def login(request:Request, user: str = Form(...), password: str = Form(...), db:
 
 @app.post("/change-password")
 def change_password(
-    username: str = Form(...),                 # or user_id from session/JWT
+    username: str = Form(...),                 
     old_password: str = Form(...),
     new_password: str = Form(...),
     db: Session = Depends(get_db),
 ):
     # 1. Get the user
-    db_user = db.query(User).filter(User.username == username).first()
+    db_user = crud.get_user_by_username(db , username)
     if not db_user:
         return JSONResponse(
             status_code=404,
-            content={"message": "User not found"}
+            content={
+                "message": "User not found",
+                "redirect": "/signup"}
         )
 
     # 2. Verify old password
-    if not verify_password(old_password, db_user.password):
+    if not crud.verify_password(old_password, db_user.password):
         return JSONResponse(
             status_code=400,
-            content={"message": "Old password is incorrect"}
+            content={
+                "message": "Old password is incorrect"
+                }
         )
 
     # 3. Update password
-    db_user.password = hash_password(new_password)
+    db_user.password = crud.hash_password(new_password)
     db.commit()
 
     return JSONResponse(
         status_code=200,
-        content={"message": "Password changed successfully", "redirect": "/login"}
+        content={
+            "message": "Password changed successfully", 
+            "redirect": "/login"
+        }
     )
   
 
