@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session#import Session from SQLAlchemy
 from app import schemas#import schemas.py
-from models import User, Document, Summary, Video, Download#import models.py
+from app.models import User, Document, Summary, Video, Download#import models.py
 from passlib.context import CryptContext#import passlib for hashing passwords
 from typing import Optional
 
