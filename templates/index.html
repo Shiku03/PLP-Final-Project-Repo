@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="{{ url_for('static', path='styles.css') }}">
     <title>Text to Video LMS</title>
 </head>
 
@@ -63,7 +63,7 @@
                             <div class="upload-form-container">
                                 <form class="upload-form" id="upload-form">
                                     <input type="file" id="uploadedFile" name="uploadedFile"
-                                        accept=".txt,.doc,.docx,.pdf,.jpg,.png,.jpeg" />
+                                        accept=".txt,.doc,.docx,.pdf,.jpg,.png,.jpeg" method="POST"/>
                                     <button type="submit" id="upload-btn" >Upload and Extract Text</button>
                                     <p id="status"></p>
                                 </form>
@@ -116,7 +116,7 @@
     </div>
 
  
-    <script src="/static/script.js"></script>
+    <script src="{{ url_for('static', path='script.js') }}"></script>
 </body>
 
 </html>
