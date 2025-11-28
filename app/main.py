@@ -2,6 +2,7 @@ from fastapi import FastAPI, Form, Depends, HTTPException, Request, UploadFile, 
 from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from app.database import SessionLocal, engine, Base
 from app.models import User, UserRole, Document, Summary, Video, Download
@@ -27,13 +28,22 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 Base.metadata.create_all(bind=engine)
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+origins=["http://127.0.0.1:5500", "http://localhost:5500"]
 
 app.add_middleware(
-    SessionMiddleware,
-    secret_key="your_super_secret_key_here",  # change this
-    same_site="strict",
-    https_only=False,  # set True in production with HTTPS
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
+app.add_middleware(
+       SessionMiddleware,
+       secret_key="your_super_secret_key_here",
+       same_site="strict",
+       https_only=False,
+   )
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GenEd_Gemini_API_KEY")
@@ -209,10 +219,115 @@ def change_password_page(request: Request):
 
 @app.post("/upload")
 async def upload_file(
-    uploaded_file: UploadFile = File(...)
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
 ):
-    print(f"File Name: {uploaded_file.filename}")
-    print(f"Content Type: {uploaded_file.content_type}")
+    """
+    Upload a file, save it, extract text using Gemini, and store in database
+    """
+    # Get user_id from session
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "message": "Please login first",
+                "redirect": "/login"
+            }
+        )
+    
+    # Validate user exists
+    db_user = db.query(User).filter(User.id == user_id).first()
+    if not db_user:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "User not found"}
+        )
+    
+    # Validate file type
+    allowed_extensions = {'.txt', '.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png'}
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in allowed_extensions:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"File type {file_ext} not allowed"}
+        )
+    
+    # Create uploads directory if it doesn't exist
+    upload_dir = Path("media/uploads")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate unique filename
+    unique_filename = f"{user_id}_{int(time.time())}_{file.filename}"
+    file_path = upload_dir / unique_filename
+    
+    # Save file to disk
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"message": f"Failed to save file: {str(e)}"}
+        )
+    
+    # Extract text using Gemini API
+    extracted_text = ""
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        
+        # Read file bytes
+        with open(file_path, "rb") as fh:
+            file_bytes = fh.read()
+        
+        # Upload to Gemini
+        uploaded = client.files.upload(
+            file=file_bytes,
+            file_name=file.filename
+        )
+        
+        # Extract text
+        extract_prompt = "Extract all text from the uploaded file and return it as plain text without any formatting or markdown."
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp",
+            contents=[extract_prompt, uploaded]
+        )
+        
+        extracted_text = response.text if hasattr(response, 'text') else ""
+        
+    except Exception as e:
+        # If extraction fails, still save the document but with empty text
+        print(f"Text extraction failed: {e}")
+        extracted_text = f"[Text extraction failed: {str(e)}]"
+    
+    # Save document to database
+    try:
+        document = Document(
+            user_id=user_id,
+            doc_name=file.filename,
+            file_path=str(file_path),
+            extracted_text=extracted_text
+        )
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": "File uploaded and text extracted successfully",
+                "document_id": document.id,
+                "filename": file.filename,
+                "extracted_text": extracted_text[:500] + "..." if len(extracted_text) > 500 else extracted_text,
+                "text_length": len(extracted_text)
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"message": f"Failed to save to database: {str(e)}"}
+        )
 
 
 
