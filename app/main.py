@@ -8,6 +8,7 @@ from app.database import SessionLocal, engine, Base
 from app.models import User, UserRole, Document, Summary, Video, Download
 from passlib.context import CryptContext
 import os
+import shutil
 import uuid
 from dotenv import load_dotenv
 from google import genai
@@ -24,7 +25,10 @@ from app import crud
 
 # initialize
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 templates = Jinja2Templates(directory="templates")
 Base.metadata.create_all(bind=engine)
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
