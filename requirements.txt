@@ -13,3 +13,4 @@ aiofiles
 pydantic
 pymysql
 itsdangerous
+pydantic[email]
