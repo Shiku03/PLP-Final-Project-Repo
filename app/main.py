@@ -22,6 +22,9 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from google.genai import types
 from app import crud
+from pathlib import Path
+from docx import Document as DocxDocument
+import PyPDF2
 
 # initialize
 app = FastAPI()
@@ -252,6 +255,7 @@ async def upload_file(
     # Validate file type
     allowed_extensions = {'.txt', '.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png'}
     file_ext = Path(file.filename).suffix.lower()
+
     if file_ext not in allowed_extensions:
         return JSONResponse(
             status_code=400,
@@ -278,6 +282,21 @@ async def upload_file(
     
     # Extract text using Gemini API
     extracted_text = ""
+    if file_ext == ".txt":
+        with open(file_path, "r", encoding="utf-8") as f:
+           extracted_text = f.read()
+    elif file_ext == ".docx":
+        doc = DocxDocument(file_path)
+        extracted_text = "\n".join([p.text for p in doc.paragraphs])
+    elif file_ext == ".pdf":
+        with open(file_path, "rb") as f:
+            reader = PyPDF2.PdfReader(f)
+            extracted_text = "\n".join([page.extract_text() for page in reader.pages])
+    else:
+    # For unsupported files, skip or implement OCR
+        extracted_text = "[Cannot extract text from this file type]"
+
+
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         
@@ -288,13 +307,12 @@ async def upload_file(
         # Upload to Gemini
         uploaded = client.files.upload(
             file=file_bytes,
-            file_name=file.filename
         )
         
         # Extract text
         extract_prompt = "Extract all text from the uploaded file and return it as plain text without any formatting or markdown."
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model="gemini-2.5-flash",
             contents=[extract_prompt, uploaded]
         )
         
