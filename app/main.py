@@ -25,6 +25,7 @@ from app import crud
 from pathlib import Path
 from docx import Document as DocxDocument
 import PyPDF2
+import time
 
 # initialize
 app = FastAPI()
@@ -62,6 +63,13 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def require_login(request: Request):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return RedirectResponse(url="/login", status_code=302)
+    return user_id
+
 
 # Routes
 # home page
@@ -141,9 +149,9 @@ def signup(
 @app.post("/login")
 def login(request:Request, user: str = Form(...), password: str = Form(...), db: Session = Depends(get_db)):
     if "@" in user:
-        db_user = crud.get_user_by_username(db, user)
-    else:
         db_user = crud.get_user_by_email(db, user)
+    else:
+        db_user = crud.get_user_by_username(db, user)
     
     
     if not db_user:
@@ -222,19 +230,25 @@ def login_page(request: Request):
 def change_password_page(request: Request):
     return templates.TemplateResponse("change-password.html", {"request": request})
 
+@app.get("/dashboard")
+def dashboard(request: Request, user_id: int = Depends(require_login)):
+    return templates.TemplateResponse("dashboard.html", {"request": request})
+
 # upload files endpoint and logic
 
 @app.post("/upload")
 async def upload_file(
     request: Request,
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: int = Depends(require_login)
 ):
     """
     Upload a file, save it, extract text using Gemini, and store in database
     """
     # Get user_id from session
     user_id = request.session.get("user_id")
+    print(user_id)
     if not user_id:
         return JSONResponse(
             status_code=401,
@@ -280,34 +294,57 @@ async def upload_file(
             content={"message": f"Failed to save file: {str(e)}"}
         )
     
-    # Extract text using Gemini API
+  
+  
+    
+    def extract_text_locally(file_path, file_ext):
+    #Extract text from file using local libraries
+        try:
+            if file_ext == ".txt":
+                with open(file_path, "r", encoding="utf-8") as f:
+                    return f.read()
+        
+            elif file_ext == ".docx":
+                doc = DocxDocument(file_path)
+                return "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
+        
+            elif file_ext == ".pdf":
+                with open(file_path, "rb") as f:
+                    reader = PyPDF2.PdfReader(f)
+                    text_parts = []
+                    for page in reader.pages:
+                        page_text = page.extract_text()
+                        if page_text:
+                            text_parts.append(page_text)
+                    return "\n".join(text_parts)
+        
+            else:
+                return "[Cannot extract text from this file type locally]"
+    
+        except Exception as e:
+            return f"[Local text extraction failed: {str(e)}]"
+     
     extracted_text = ""
-    if file_ext == ".txt":
-        with open(file_path, "r", encoding="utf-8") as f:
-           extracted_text = f.read()
-    elif file_ext == ".docx":
-        doc = DocxDocument(file_path)
-        extracted_text = "\n".join([p.text for p in doc.paragraphs])
-    elif file_ext == ".pdf":
-        with open(file_path, "rb") as f:
-            reader = PyPDF2.PdfReader(f)
-            extracted_text = "\n".join([page.extract_text() for page in reader.pages])
-    else:
-    # For unsupported files, skip or implement OCR
-        extracted_text = "[Cannot extract text from this file type]"
-
+    gemini_success= False
 
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         
-        # Read file bytes
-        with open(file_path, "rb") as fh:
-            file_bytes = fh.read()
         
         # Upload to Gemini
         uploaded = client.files.upload(
-            file=file_bytes,
+            path=str(file_path)
         )
+
+        max_wait = 30
+        waited = 0
+        while uploaded.state.name == "PROCESSING" and waited < max_wait:
+            time.sleep(2)
+            waited += 2
+            uploaded = client.files.get(name=uploaded.name)
+        
+        if uploaded.state.name == "FAILED":
+            raise Exception("File processing failed in Gemini")
         
         # Extract text
         extract_prompt = "Extract all text from the uploaded file and return it as plain text without any formatting or markdown."
@@ -317,11 +354,18 @@ async def upload_file(
         )
         
         extracted_text = response.text if hasattr(response, 'text') else ""
+
+        if extracted_text and len(extracted_text) > 10:  # Valid extraction
+            gemini_success = True
         
     except Exception as e:
         # If extraction fails, still save the document but with empty text
-        print(f"Text extraction failed: {e}")
-        extracted_text = f"[Text extraction failed: {str(e)}]"
+        print(f"Gemini text extraction failed: {e}")
+        #extracted_text = f"[Text extraction failed: {str(e)}]"
+    
+    if not gemini_success or not extracted_text.strip():
+        print(f"Using local extraction for {file_ext} file")
+        extracted_text = extract_text_locally(file_path, file_ext)
     
     # Save document to database
     try:
@@ -342,7 +386,8 @@ async def upload_file(
                 "document_id": document.id,
                 "filename": file.filename,
                 "extracted_text": extracted_text[:500] + "..." if len(extracted_text) > 500 else extracted_text,
-                "text_length": len(extracted_text)
+                "text_length": len(extracted_text),
+                "extraction_method": "Gemini API" if gemini_success else "Local extraction"  
             }
         )
     except Exception as e:
@@ -361,11 +406,11 @@ async def upload_file(
 # generate video from summary / document / raw text
 @app.post("/generate-video", response_model=schemas.VideoOut)
 async def generate_video(
-    user_id: int = Form(...),
     summary_id: Optional[int] = Form(None),
     document_id: Optional[int] = Form(None),
     raw_text: Optional[str] = Form(None),
     db: Session = Depends(get_db),
+    user_id: int = Depends(require_login)
 ):
     # validate user
     db_user = db.query(User).filter(User.id == user_id).first()
@@ -391,20 +436,35 @@ async def generate_video(
         doc = db.query(Document).filter(Document.id == document_id).first()
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
-        # read file and ask model to extract text
-        try:
-            with open(doc.file_path, "rb") as fh:
-                file_bytes = fh.read()
-            uploaded = client.files.upload(file=file_bytes, file_name=os.path.basename(doc.file_path))
-            extract_prompt = "Extract all text from the uploaded file and return a single block of text."
-            resp = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=[extract_prompt],
-                files=[uploaded] if hasattr(uploaded, "id") else None
-            )
-            source_text = getattr(resp, "text", None) or getattr(resp, "content", None) or ""
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to extract text from document: {e}")
+        
+        if doc.extracted_text and len(doc.extracted_text.strip()) > 10:
+            source_text = doc.extracted_text
+        
+        else:
+            try:
+                uploaded_file = client.files.upload(path=doc.file_path)
+                
+                # Wait for file processing
+                max_wait = 30
+                waited = 0
+                while uploaded_file.state.name == "PROCESSING" and waited < max_wait:
+                    await asyncio.sleep(2)
+                    waited += 2
+                    uploaded_file = client.files.get(name=uploaded_file.name)
+                
+                if uploaded_file.state.name == "FAILED":
+                    raise Exception("File processing failed in Gemini")
+                
+                # Extract text
+                extract_prompt = "Extract all text from the uploaded file and return a single block of text."
+                resp = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[extract_prompt, uploaded_file]
+                )
+                source_text = getattr(resp, "text", None) or ""
+            
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to extract text from document: {e}")
 
     if not source_text:
         raise HTTPException(status_code=400, detail="No source text provided for video generation")
@@ -436,12 +496,17 @@ async def generate_video(
     output_path = media_dir / video_name
 
     try:
-        operation = client.models.generate_video(
-            model="veo-2.0-generate-001",
-            prompt=summary_text,
-            output_file_name=video_name,
-            config={"aspectRatio": "16:9", "durationSeconds": 6}
-        )
+        operation = client.models.generate(
+    model="veo-2.0-generate-001",
+    contents=summary_text,
+    config={
+        "video": {
+            "durationSeconds": 6,
+            "aspectRatio": "16:9"
+        }
+    }
+)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Video generation request failed: {e}")
 
@@ -498,7 +563,7 @@ async def generate_video(
 
 # endpoint to record download and return file
 @app.get("/download-video/{video_id}")
-def download_video(video_id: int, user_id: Optional[int] = None, db: Session = Depends(get_db)):
+def download_video(video_id: int, db: Session = Depends(get_db),user_id: int = Depends(require_login)):
     video = db.query(Video).filter(Video.id == video_id).first()
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
