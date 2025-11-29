@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+python-multipart
+jinja2
+sqlalchemy
+passlib[bcrypt]
+python-dotenv
+google-genai
+starlette
+python-docx
+PyPDF2
+aiofiles
+pydantic
+pymysql
+itsdangerous
